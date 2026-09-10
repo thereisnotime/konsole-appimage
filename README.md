@@ -1,68 +1,142 @@
-# konsole-appimage
+# Konsole AppImage
 
-Builds a self-contained [Konsole](https://apps.kde.org/konsole/) AppImage from
-KDE neon's noble packages, so you can run current Konsole on Ubuntu 24.04 LTS
-without touching the system Qt6 stack.
+Current [Konsole](https://apps.kde.org/konsole/) as a single self-contained
+file, for distributions whose packaged Konsole is years behind.
 
-## Why
+Built from [KDE neon](https://neon.kde.org/) packages on an Ubuntu 24.04 base,
+so it runs on any glibc 2.38+ system without touching the host's Qt or KDE
+libraries.
 
-Ubuntu 24.04 ships Konsole 23.08.5 — about three years behind current stable.
-There is no clean native upgrade:
+> **Unofficial build.** Not affiliated with or endorsed by KDE. See
+> [NOTICE.md](NOTICE.md).
 
-| Option | Result |
+## Install
+
+Grab the latest `.AppImage` from [Releases](../../releases):
+
+```sh
+chmod +x Konsole-*-x86_64.AppImage
+./Konsole-*-x86_64.AppImage
+```
+
+Verify it first if you like:
+
+```sh
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+That is the whole install. No package manager, no root, no repository to add.
+Delete the file to uninstall.
+
+## Why this exists
+
+Ubuntu 24.04 LTS ships Konsole 23.08 — roughly three years and nine feature
+releases behind current. None of the usual escape hatches work:
+
+| Approach | Outcome |
 |---|---|
-| `kubuntu-ppa/backports` | publishes `konsole` for questing and jammy only, nothing for noble |
-| KDE neon repo on the host | its `qt6-base` replaces Ubuntu's Qt6 6.4.2 and removes 26 reverse-deps, including VirtualBox, Wireshark and qBittorrent |
-| Flathub | works, but sandboxes the shell — no `kubectl`, `docker`, `gh` on `PATH` |
-| Official AppImage | does not exist; upstream ships Flatpak, Snap and distro packages |
+| `kubuntu-ppa/backports` | publishes Konsole for questing and jammy only. Nothing for noble. |
+| Add KDE neon's repo to the host | its `qt6-base` replaces Ubuntu's Qt6 and removes 26 reverse-dependencies — on a typical desktop that means VirtualBox, Wireshark and qBittorrent |
+| [Flathub](https://flathub.org/apps/org.kde.konsole) | works, but the shell runs inside the sandbox, so `kubectl`, `docker`, `gh` and anything else on your host `PATH` is invisible |
+| Official AppImage | does not exist — upstream ships Flatpak, Snap and distro packages |
+| Upgrade the distro | fair, but not always on the table |
 
-An AppImage loads its own Qt6/KF6 into one process while the system Qt6 keeps
-serving everything else, and it is not sandboxed, so the shell sees the real
-`PATH`.
+An AppImage loads its own Qt6/KF6 into one process while the system stack keeps
+serving everything else, and it is not sandboxed, so the shell you get is a
+normal shell.
 
-## Usage
+## What makes this different from a generic AppImage
 
-Download the AppImage from
-[Releases](../../releases), then:
+**The bundle does not leak into your shell.**
 
-```sh
-chmod +x Konsole-*.AppImage
-./Konsole-*.AppImage
+A terminal emulator spawns a login shell that inherits its environment. The
+usual AppImage recipe exports `LD_LIBRARY_PATH` and `QT_PLUGIN_PATH`, which
+would then follow every command you type and break unrelated host binaries
+launched from that window.
+
+This build avoids that. Libraries resolve through `RPATH` (`$ORIGIN/../lib`) and
+Qt paths through a `qt.conf` beside the binary. Only two variables are exported,
+both additive and harmless:
+
+| Variable | Why |
+|---|---|
+| `XDG_DATA_DIRS` | KF6 icon and resource lookup; prepends, keeps your existing entries |
+| `QT_QPA_PLATFORMTHEME` (empty) | stops a Plasma 5 session pushing its Qt5 platform-theme plugin into this Qt6 process, which crashes it |
+
+Verified on a Plasma 5.27 host:
+
+```
+LD_LIBRARY_PATH   absent
+QT_PLUGIN_PATH    absent
+QML2_IMPORT_PATH  absent
+LD_PRELOAD        absent
+
+$ ldd $(command -v ls)      # from inside the bundled Konsole
+libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6        # system, not the bundle
 ```
 
-## Building
+## Compatibility
 
-Trigger **Build Konsole AppImage** from the Actions tab (`workflow_dispatch`).
-Inputs:
+| | |
+|---|---|
+| Requires | glibc **2.38** or newer, x86_64 |
+| Tested on | Ubuntu 24.04 LTS, Plasma 5.27, X11 |
+| Host Qt6 | untouched — runs fine alongside Qt6 6.4.2 |
+| Size | ~103 MB |
 
-- `neon_channel` — `user` (stable), `testing`, or `unstable`
-- `publish_release` — also attach the result to a GitHub release
+Runs on a Plasma 5 desktop, a Plasma 6 desktop, GNOME, or no desktop
+environment at all.
 
-Locally, with Docker:
+## Configuration
+
+The AppImage reads the same configuration as a system Konsole:
+`~/.config/konsolerc` and `~/.local/share/konsole/`. Existing profiles and
+colour schemes are picked up automatically.
+
+If the menubar is missing, press `Ctrl+Shift+M` — recent Konsole hides it by
+default in favour of the hamburger menu. Split View then lives under
+**View → Split View**.
+
+## Building it yourself
+
+Trigger **Build Konsole AppImage** from the Actions tab. Inputs:
+
+| Input | Meaning |
+|---|---|
+| `neon_channel` | `user` (stable), `testing`, or `unstable` |
+| `publish_release` | also attach the result to a GitHub release |
+
+Or locally, with Docker:
 
 ```sh
-docker run --rm -v "$PWD:/work" -w /work ubuntu:24.04 \
-  bash /work/build/build-appimage.sh
+docker run --rm -v "$PWD:/work" -w /work \
+  -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+  ubuntu:24.04 bash /work/build/build-appimage.sh
 ```
 
-Output lands in `dist/`, along with a `manifest.txt` recording the resolved
-Konsole, Qt6 and KF6 versions.
+Output lands in `dist/` with a `manifest.txt` recording every resolved package
+version.
 
-> Run the build in a container. The script adds KDE neon's apt repo, which will
-> replace the entire Qt6 stack of whatever system it runs on.
+> Run the build in a container. The script adds KDE neon's apt repository, which
+> will replace the entire Qt6 stack of whatever system it runs on.
 
-## Design notes
+## How it works
 
-The build base is pinned to `ubuntu:24.04` on purpose. AppImages must be built
-against a glibc no newer than the oldest host they target; building on Arch or
-Fedora produces a binary that silently refuses to start on Ubuntu 24.04.
+1. Start from `ubuntu:24.04`. AppImages must be built against a glibc no newer
+   than the oldest host they target — building on Arch or Fedora produces a
+   binary that silently refuses to start on Ubuntu 24.04.
+2. Add KDE neon's `noble` archive, which publishes current Konsole built against
+   that same base. Nothing is compiled.
+3. `linuxdeploy` resolves the ELF closure and rewrites RPATHs;
+   `linuxdeploy-plugin-qt` bundles Qt plugins, QML and translations.
+4. Copy the KDE data files `linuxdeploy` knows nothing about, write `qt.conf`
+   and a deliberately minimal `AppRun`, then pack with `appimagetool`.
 
-The `AppRun` is deliberately minimal. Konsole spawns a login shell that inherits
-its environment, so exporting `LD_LIBRARY_PATH` or `QT_PLUGIN_PATH` — what a
-typical AppImage does — would follow every command you run and break host
-binaries launched from that window. Libraries resolve via `RPATH` and Qt paths
-via `qt.conf` instead. Only `XDG_DATA_DIRS` (additive) and an empty
-`QT_QPA_PLATFORMTHEME` are exported; the latter stops a Plasma 5 session from
-pushing its Qt5 platform-theme plugin into this Qt6 process.
+Full rationale, including the alternatives that were rejected and why, is in
+[`openspec/changes/build-konsole-appimage/design.md`](openspec/changes/build-konsole-appimage/design.md).
 
-See `openspec/changes/build-konsole-appimage/design.md` for the full rationale.
+## Licence
+
+Build scripts: MIT ([LICENSE](LICENSE)).
+Bundled software: its own licences, all included in the image. See
+[NOTICE.md](NOTICE.md) for redistribution details and the offer of source.

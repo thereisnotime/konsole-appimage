@@ -214,8 +214,22 @@ install -d "$OUT_DIR"
 
 log "Packaging"
 OUTPUT="$OUT_DIR/Konsole-${KONSOLE_SEMVER}-${ARCH}.AppImage"
-appimagetool "$APPDIR" "$OUTPUT"
+
+# Embedding update information lets AppImageUpdate fetch a binary delta instead
+# of re-downloading ~100 MB. Requires the matching .zsync to be published as a
+# release asset alongside the AppImage.
+APPIMAGETOOL_ARGS=()
+if [ -n "${UPDATE_INFO:-}" ]; then
+    APPIMAGETOOL_ARGS+=( -u "$UPDATE_INFO" )
+    log "Update info: $UPDATE_INFO"
+fi
+
+appimagetool "${APPIMAGETOOL_ARGS[@]}" "$APPDIR" "$OUTPUT"
 chmod +x "$OUTPUT"
+
+log "Checksums"
+( cd "$OUT_DIR" && sha256sum ./*.AppImage ./*.zsync 2>/dev/null > SHA256SUMS || sha256sum ./*.AppImage > SHA256SUMS )
+cat "$OUT_DIR/SHA256SUMS"
 
 # So the caller (CI) can pick these up without re-parsing.
 if [ -n "${GITHUB_ENV:-}" ]; then
