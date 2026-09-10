@@ -112,12 +112,31 @@ libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6        # system, not the bundle
 | | |
 |---|---|
 | Requires | glibc **2.38** or newer, x86_64 |
-| Session | X11 and Wayland (both platform plugins are bundled) |
-| Tested on | Ubuntu 24.04 LTS, Plasma 5.27, X11 |
+| Session | X11 and Wayland (both verified) |
+| Tested on | Ubuntu 24.04 LTS, Plasma 5.27, X11 and Wayland |
 | Host Qt6 | untouched — runs fine alongside Qt6 6.4.2 |
 | Size | ~103 MB |
 
 Runs on a Plasma 5 desktop, a Plasma 6 desktop, GNOME, or headless.
+
+### Ubuntu 22.04 and older are not supported
+
+22.04 ships glibc 2.35, and the bundled binaries need 2.38:
+
+```
+libc.so.6: version `GLIBC_2.38' not found (required by libQt6Gui.so.6)
+```
+
+This is structural, not an oversight. Konsole 26.08 needs Qt 6.11, KDE neon
+builds that only for noble, and noble is glibc 2.39. Supporting 22.04 would mean
+compiling Qt6 and KDE Frameworks from source on a 22.04 base — which is exactly
+the work this project exists to avoid.
+
+`install.sh` detects this and refuses with a clear message rather than letting
+you hit a wall of linker errors.
+
+Known-good: Ubuntu 24.04+, Debian 13+, Fedora 39+, and current rolling releases.
+Anything with glibc 2.38 or newer.
 
 Qt6 and KDE Frameworks are bundled. GPU-driver-coupled libraries (`libEGL`,
 `libGL`) and core system libraries are deliberately **not** bundled — bundling

@@ -211,6 +211,15 @@ if [ -d "$APPDIR/usr/plugins" ]; then
     done
 fi
 
+# AppStream metainfo: what software centres and AppImage catalogues read to
+# describe the app. Copy only Konsole's, not every package's.
+for mi in /usr/share/metainfo/org.kde.konsole*.xml; do
+    [ -e "$mi" ] || continue
+    install -d "$APPDIR/usr/share/metainfo"
+    cp "$mi" "$APPDIR/usr/share/metainfo/"
+    log "  metainfo: $(basename "$mi")"
+done
+
 # Translations for ki18n. Copying all of /usr/share/locale would add hundreds
 # of megabytes of unrelated catalogues, so take only Konsole's and those of the
 # frameworks that supply its menu and dialog strings.

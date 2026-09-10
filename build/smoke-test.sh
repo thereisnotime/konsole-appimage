@@ -106,6 +106,13 @@ if [ -d "$root/usr/plugins/kf6" ]; then
     ok "all KF6 plugins carry an RPATH"
 fi
 
+# Software centres and AppImage catalogues read this to describe the app.
+if [ -n "$(ls "$root/usr/share/metainfo/"*.xml 2>/dev/null)" ]; then
+    ok "AppStream metainfo present ($(basename "$(ls "$root/usr/share/metainfo/"*.xml | head -1)"))"
+else
+    fail "AppStream metainfo missing"
+fi
+
 max="$(find "$root/usr" -type f \( -name '*.so*' -o -name konsole \) \
        -exec objdump -T {} \; 2>/dev/null \
        | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -uV | tail -1)"
