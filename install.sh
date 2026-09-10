@@ -22,11 +22,30 @@ log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 [ "$(uname -m)" = "x86_64" ] || die "only x86_64 is published (this is $(uname -m))"
 
 # glibc 2.38+ is required; the bundle is built on noble.
-if command -v ldd >/dev/null 2>&1; then
-    have="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$' || echo 0)"
-    if [ "$(printf '2.38\n%s\n' "$have" | sort -V | head -1)" != "2.38" ]; then
+# getconf is authoritative and prints exactly "glibc X.Y"; ldd's banner varies
+# between distributions ("2.39", "2.42.0", vendor-patched strings) and is only
+# a fallback.
+detect_glibc() {
+    local v=""
+    v="$(getconf GNU_LIBC_VERSION 2>/dev/null | awk '{print $NF}')"
+    if [ -z "$v" ] && command -v ldd >/dev/null 2>&1; then
+        v="$(ldd --version 2>/dev/null | head -1 \
+             | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | tail -1)"
+    fi
+    printf '%s' "$v"
+}
+
+have="$(detect_glibc)"
+if [ -n "$have" ]; then
+    # Compare major.minor numerically. String sorting gets this wrong.
+    if ! awk -v have="$have" -v need="2.38" 'BEGIN {
+            split(have, h, "."); split(need, n, ".");
+            exit !((h[1] > n[1]) || (h[1] == n[1] && h[2] >= n[2]))
+        }'; then
         die "glibc $have is too old, need 2.38 or newer"
     fi
+else
+    log "Could not detect glibc version, continuing anyway"
 fi
 
 if [ "$VERSION" = "latest" ]; then
