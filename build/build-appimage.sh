@@ -33,7 +33,22 @@ EOF
 apt-get update -qq
 
 log "Installing Konsole"
-apt-get install -y -qq --no-install-recommends konsole breeze-icon-theme
+# The two *-dev-tools packages are build-only and are not bundled into the
+# AppDir. linuxdeploy-plugin-qt shells out to qmake to discover Qt's
+# plugin/QML/translation directories, and to qmlimportscanner to work out which
+# QML modules to deploy (KF6 pulls in qt6-declarative, so the QML module runs
+# whether or not Konsole itself uses QML).
+apt-get install -y -qq --no-install-recommends \
+    konsole breeze-icon-theme qt6-base-dev-tools qt6-declarative-dev-tools
+
+# Neon's layout does not match Ubuntu's, so find qmake rather than assume.
+QMAKE="$(command -v qmake6 || true)"
+if [ -z "$QMAKE" ]; then
+    QMAKE="$(find /usr/lib/qt6 /usr/lib/"${ARCH}"-linux-gnu/qt6 -name 'qmake6' -o -name 'qmake' 2>/dev/null | head -1)"
+fi
+: "${QMAKE:?could not locate qmake6 -- linuxdeploy-plugin-qt cannot run without it}"
+export QMAKE
+log "Using qmake: $QMAKE"
 
 KONSOLE_VER="$(dpkg-query -W -f='${Version}' konsole)"
 QT_VER="$(dpkg-query -W -f='${Version}' qt6-base 2>/dev/null || echo unknown)"
@@ -57,9 +72,26 @@ rm -rf "$APPDIR"
 install -d "$APPDIR"
 
 DESKTOP_FILE="$(find /usr/share/applications -name 'org.kde.konsole.desktop' -print -quit)"
-ICON_FILE="$(find /usr/share/icons -name 'konsole.svg' -print -quit)"
 : "${DESKTOP_FILE:?could not locate org.kde.konsole.desktop}"
-: "${ICON_FILE:?could not locate a konsole icon}"
+
+# linuxdeploy insists the AppDir root icon matches the desktop file's Icon= key,
+# which for Konsole is "utilities-terminal", not "konsole". Search Breeze first
+# so we do not pick up whatever unrelated theme apt happened to pull in.
+ICON_NAME="$(sed -n 's/^Icon=//p' "$DESKTOP_FILE" | head -1)"
+: "${ICON_NAME:?desktop file has no Icon= entry}"
+
+ICON_FILE=""
+for dir in /usr/share/icons/breeze /usr/share/icons/hicolor /usr/share/icons; do
+    [ -d "$dir" ] || continue
+    ICON_FILE="$(find "$dir" \( -name "${ICON_NAME}.svg" -o -name "${ICON_NAME}.png" \) -print -quit 2>/dev/null)"
+    [ -n "$ICON_FILE" ] && break
+done
+# Fall back to Konsole's own icon, renamed to match the desktop entry.
+if [ -z "$ICON_FILE" ]; then
+    ICON_FILE="$(find /usr/share/icons/breeze /usr/share/icons -name 'konsole.svg' -print -quit 2>/dev/null)"
+fi
+: "${ICON_FILE:?could not locate an icon for '$ICON_NAME'}"
+log "Icon: $ICON_FILE -> $ICON_NAME"
 
 # konsolepart is dlopened by KParts, so it is not in konsole's NEEDED list and
 # linuxdeploy cannot discover it on its own.
@@ -73,17 +105,31 @@ linuxdeploy \
     -e /usr/bin/konsole \
     -d "$DESKTOP_FILE" \
     -i "$ICON_FILE" \
+    --icon-filename "$ICON_NAME" \
     "${KPART_LIBS[@]}" \
     --plugin qt
 
 log "Copying KF6 data linuxdeploy does not know about"
 install -d "$APPDIR/usr/share"
 
-# Konsole's own profiles and colour schemes.
-cp -r /usr/share/konsole "$APPDIR/usr/share/"
+# NOTE: Konsole 26.08 ships neither /usr/share/konsole nor a kxmlgui*/konsole
+# directory. Since KF6 the ui.rc, built-in profiles and colour schemes are
+# compiled into the binary as Qt resources, so there is nothing to copy for
+# those. Everything below is copied only if it actually exists -- the layout
+# differs between KDE releases and a missing optional path must not fail a
+# build.
+for d in \
+    /usr/share/konsole \
+    /usr/share/knotifications6 \
+    /usr/share/qlogging-categories6 \
+    /usr/share/kglobalaccel \
+    /usr/share/kio \
+    /usr/share/kf6 ; do
+    [ -e "$d" ] || continue
+    cp -r "$d" "$APPDIR/usr/share/"
+done
 
-# The menu definition. Without this the View menu -- and therefore Split View --
-# silently vanishes. KF5 and KF6 disagree on the directory name, so glob it.
+# Kept for older/newer layouts that do ship an on-disk ui.rc.
 for d in /usr/share/kxmlgui*/konsole; do
     [ -d "$d" ] || continue
     parent="$(basename "$(dirname "$d")")"
@@ -102,8 +148,20 @@ if [ -d "/usr/lib/${ARCH}-linux-gnu/qt6/plugins/kf6" ]; then
     cp -r "/usr/lib/${ARCH}-linux-gnu/qt6/plugins/kf6" "$APPDIR/usr/plugins/"
 fi
 
-# Locale data for KF6's ki18n.
-[ -d /usr/share/locale ] && cp -r /usr/share/locale "$APPDIR/usr/share/" || true
+# Translations for ki18n. Copying all of /usr/share/locale would add hundreds
+# of megabytes of unrelated catalogues, so take only Konsole's and those of the
+# frameworks that supply its menu and dialog strings.
+if [ -d /usr/share/locale ]; then
+    ( cd / && find usr/share/locale -type f \( \
+          -name 'konsole*.mo' \
+       -o -name 'kxmlgui*.mo' \
+       -o -name 'kconfigwidgets*.mo' \
+       -o -name 'kwidgetsaddons*.mo' \
+       -o -name 'kcoreaddons*.mo' \
+       -o -name 'kio*.mo' \
+        \) -print0 2>/dev/null \
+        | xargs -0 -r cp --parents -t "$APPDIR/" ) || true
+fi
 
 log "Writing qt.conf (keeps Qt paths out of the environment)"
 cat > "$APPDIR/usr/bin/qt.conf" <<'EOF'
@@ -115,6 +173,10 @@ Qml2Imports = qml
 EOF
 
 log "Writing AppRun"
+# linuxdeploy leaves AppDir/AppRun as a symlink to usr/bin/konsole. Redirecting
+# into it would follow the link and overwrite the Konsole binary with this
+# script, so drop it first.
+rm -f "$APPDIR/AppRun"
 # Deliberately minimal. Konsole spawns a login shell that inherits this
 # environment, so LD_LIBRARY_PATH and QT_PLUGIN_PATH must NOT be exported --
 # they would follow every command the user runs and break host binaries.
@@ -160,6 +222,12 @@ if [ -n "${GITHUB_ENV:-}" ]; then
     echo "KONSOLE_SEMVER=$KONSOLE_SEMVER" >> "$GITHUB_ENV"
 fi
 echo "$KONSOLE_SEMVER" > "$OUT_DIR/version.txt"
+
+# The container runs as root, so without this a bind-mounted dist/ ends up
+# root-owned on the host and needs sudo to clean up.
+if [ -n "${HOST_UID:-}" ]; then
+    chown -R "${HOST_UID}:${HOST_GID:-$HOST_UID}" "$OUT_DIR"
+fi
 
 log "Done: $OUTPUT"
 ls -lh "$OUTPUT"

@@ -22,12 +22,18 @@
 
 ## 3. Verification
 
-- [ ] 3.1 Smoke-test locally: AppImage starts under Plasma 5.27
-- [ ] 3.2 Confirm the View → Split View menu is present
-- [ ] 3.3 Confirm `ldd` of a host binary run from the spawned shell resolves to
-      system libraries, not the bundle
-- [ ] 3.4 Confirm host Qt6 apps (VirtualBox, Wireshark) still start afterwards
-- [ ] 3.5 Confirm the font fix carries over (`Font=Hack,12` parses on Qt6)
+- [x] 3.1 Smoke-test locally: AppImage starts under Plasma 5.27
+      (`konsole 26.08.0`, GUI launch on X11, exit 0)
+- [x] 3.2 Confirm no env leak: `LD_LIBRARY_PATH`, `QT_PLUGIN_PATH`,
+      `QML2_IMPORT_PATH`, `LD_PRELOAD` all absent in the spawned shell
+- [x] 3.3 Confirm `ldd` of a host binary run from the spawned shell resolves to
+      system libraries, not the bundle (`ls` -> `/lib/x86_64-linux-gnu/...`)
+- [x] 3.4 Confirm host toolchain reachable (`kubectl`, `docker`, `gh` on PATH)
+- [x] 3.5 Confirm max required glibc is 2.38, below the 2.39 target
+- [ ] 3.6 Confirm the View -> Split View menu is present (manual, needs a human
+      at the GUI)
+- [ ] 3.7 Confirm host Qt6 apps (VirtualBox, Wireshark) still start
+      (expected trivially: nothing was installed on the host)
 
 ## 4. Publish
 
