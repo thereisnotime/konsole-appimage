@@ -54,45 +54,7 @@ jobs:
         run: echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Smoke test
-        run: |
-          set -euo pipefail
-          chmod +x dist/*.AppImage
-
-          # Two AppImages are produced (versioned + the stable-named copy), so
-          # pick one explicitly -- a glob here would pass the second as an
-          # argument to the first.
-          appimage="$(ls dist/Konsole-*-*-x86_64.AppImage | head -1)"
-          echo "testing: $appimage"
-
-          # The stable copy must be byte-identical to the versioned one.
-          cmp "$appimage" dist/Konsole-x86_64.AppImage
-
-          # It has to actually run.
-          "./$appimage" --version
-
-          "./$appimage" --appimage-extract >/dev/null
-          # AppRun must be our script, not the symlink linuxdeploy leaves behind
-          file squashfs-root/AppRun | grep -q "shell script"
-          # and the binary must still be a real ELF
-          file squashfs-root/usr/bin/konsole | grep -q ELF
-          # the AppRun must not leak loader/Qt paths into the spawned shell
-          for leak in LD_LIBRARY_PATH QT_PLUGIN_PATH QML2_IMPORT_PATH; do
-            if grep -q "$leak" squashfs-root/AppRun; then
-              echo "AppRun exports $leak -- it would leak into the spawned shell"
-              exit 1
-            fi
-          done
-          # highest glibc requirement must not exceed the noble target
-          max=$(find squashfs-root/usr -type f \( -name '*.so*' -o -name konsole \) \
-                -exec objdump -T {} \; 2>/dev/null \
-                | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -uV | tail -1)
-          echo "max glibc requirement: $max"
-          test "$(printf '%s\nGLIBC_2.39\n' "$max" | sort -V | tail -1)" = "GLIBC_2.39"
-          rm -rf squashfs-root
-
-          # zsync must exist, or AppImageUpdate silently cannot update
-          test -n "$(ls dist/*.zsync 2>/dev/null)"
-          echo "smoke test passed"
+        run: bash build/smoke-test.sh dist
 
       - uses: actions/upload-artifact@v4
         with:
