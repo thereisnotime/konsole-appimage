@@ -7,6 +7,10 @@
 set -euo pipefail
 
 NEON_CHANNEL="${NEON_CHANNEL:-user}"   # user | testing | unstable
+# Which Ubuntu base to build against. The container image MUST match:
+#   noble -> ubuntu:24.04, glibc 2.39, current Konsole
+#   jammy -> ubuntu:22.04, glibc 2.35, older Konsole but runs on 22.04
+NEON_DIST="${NEON_DIST:-noble}"
 OUT_DIR="${OUT_DIR:-/work/dist}"
 APPDIR="${APPDIR:-/tmp/AppDir}"
 ARCH="${ARCH:-x86_64}"
@@ -23,12 +27,21 @@ apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
     ca-certificates curl gnupg file desktop-file-utils patchelf zsync
 
-log "Adding KDE neon repo (channel: $NEON_CHANNEL, dist: noble)"
+# Guard against building jammy packages inside a noble container or vice
+# versa -- the result would silently require the wrong glibc.
+BASE_CODENAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+if [ "$BASE_CODENAME" != "$NEON_DIST" ]; then
+    echo "ERROR: NEON_DIST=$NEON_DIST but the container is $BASE_CODENAME." >&2
+    echo "       Use ubuntu:24.04 for noble, ubuntu:22.04 for jammy." >&2
+    exit 1
+fi
+
+log "Adding KDE neon repo (channel: $NEON_CHANNEL, dist: $NEON_DIST)"
 install -d /etc/apt/keyrings
 curl -fsSL https://archive.neon.kde.org/public.key \
     | gpg --dearmor -o /etc/apt/keyrings/neon.gpg
 cat > /etc/apt/sources.list.d/neon.list <<EOF
-deb [signed-by=/etc/apt/keyrings/neon.gpg] http://archive.neon.kde.org/${NEON_CHANNEL} noble main
+deb [signed-by=/etc/apt/keyrings/neon.gpg] http://archive.neon.kde.org/${NEON_CHANNEL} ${NEON_DIST} main
 EOF
 apt-get update -qq
 
@@ -275,7 +288,7 @@ install -d "$OUT_DIR"
 {
     echo "built:            $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "neon_channel:     $NEON_CHANNEL"
-    echo "base:             ubuntu:24.04 (noble)"
+    echo "base:             $BASE_CODENAME ($NEON_DIST)"
     echo "konsole:          $KONSOLE_VER"
     echo "qt6-base:         $QT_VER"
     echo "glibc:            $(ldd --version | head -1 | grep -oE '[0-9]+\.[0-9]+$')"
@@ -285,7 +298,14 @@ install -d "$OUT_DIR"
 } > "$OUT_DIR/manifest.txt"
 
 log "Packaging"
-OUTPUT="$OUT_DIR/Konsole-${KONSOLE_SEMVER}-${ARCH}.AppImage"
+# The jammy build is a second artifact in the same release, so it needs a
+# distinguishing name. The noble build keeps the plain one.
+if [ "$NEON_DIST" = "noble" ]; then
+    SUFFIX=""
+else
+    SUFFIX="-${NEON_DIST}"
+fi
+OUTPUT="$OUT_DIR/Konsole-${KONSOLE_SEMVER}${SUFFIX}-${ARCH}.AppImage"
 
 # Embedding update information lets AppImageUpdate fetch a binary delta instead
 # of re-downloading ~100 MB. Requires the matching .zsync to be published as a
@@ -304,8 +324,15 @@ chmod +x "$OUTPUT"
 # A stable filename makes the /releases/latest/download/ URL usable, which is
 # what install.sh and any curl one-liner depend on.
 if [ "${STABLE_COPY:-0}" = "1" ]; then
-    cp "$OUTPUT" "$OUT_DIR/Konsole-${ARCH}.AppImage"
-    log "Stable-named copy: Konsole-${ARCH}.AppImage"
+    cp "$OUTPUT" "$OUT_DIR/Konsole${SUFFIX}-${ARCH}.AppImage"
+    log "Stable-named copy: Konsole${SUFFIX}-${ARCH}.AppImage"
+    # Also give the zsync a stable name. UPDATE_INFO globs have to be exact:
+    # "Konsole-*-x86_64.AppImage.zsync" would match the jammy zsync as well and
+    # could hand a 22.04 user the build their glibc cannot load.
+    if [ -e "${OUTPUT}.zsync" ]; then
+        cp "${OUTPUT}.zsync" "$OUT_DIR/Konsole${SUFFIX}-${ARCH}.AppImage.zsync"
+        log "Stable-named zsync: Konsole${SUFFIX}-${ARCH}.AppImage.zsync"
+    fi
 fi
 
 log "Checksums"
@@ -317,6 +344,9 @@ if [ -n "${GITHUB_ENV:-}" ]; then
     echo "KONSOLE_SEMVER=$KONSOLE_SEMVER" >> "$GITHUB_ENV"
 fi
 echo "$KONSOLE_SEMVER" > "$OUT_DIR/version.txt"
+echo "$NEON_DIST" > "$OUT_DIR/dist.txt"
+# The build base's own glibc is the ceiling this artifact may require.
+getconf GNU_LIBC_VERSION | awk '{print $NF}' > "$OUT_DIR/glibc-max.txt"
 
 # The container runs as root, so without this a bind-mounted dist/ ends up
 # root-owned on the host and needs sudo to clean up.

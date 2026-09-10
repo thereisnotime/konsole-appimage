@@ -111,7 +111,7 @@ libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6        # system, not the bundle
 
 | | |
 |---|---|
-| Requires | glibc **2.38** or newer, x86_64 |
+| Requires | glibc **2.38+** (current build) or **2.35+** (legacy build), x86_64 |
 | Session | X11 and Wayland (both verified) |
 | Tested on | Ubuntu 24.04 LTS, Plasma 5.27, X11 and Wayland |
 | Host Qt6 | untouched — runs fine alongside Qt6 6.4.2 |
@@ -119,30 +119,29 @@ libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6        # system, not the bundle
 
 Runs on a Plasma 5 desktop, a Plasma 6 desktop, GNOME, or headless.
 
-### Ubuntu 22.04 and older are not supported
+### Two builds
 
-22.04 ships glibc 2.35, and the bundled binaries need 2.38:
+Konsole 26.08 needs Qt 6.11, which KDE neon only builds for noble (glibc 2.39).
+Ubuntu 22.04 has glibc 2.35 and cannot load those binaries at all:
 
 ```
 libc.so.6: version `GLIBC_2.38' not found (required by libQt6Gui.so.6)
 ```
 
-This is structural, not an oversight. Konsole 26.08 needs Qt 6.11, KDE neon
-builds that only for noble, and noble is glibc 2.39. Supporting 22.04 would mean
-compiling Qt6 and KDE Frameworks from source on a 22.04 base — which is exactly
-the work this project exists to avoid.
+So there are two builds, from neon's two archives:
 
-`install.sh` detects this and refuses with a clear message rather than letting
-you hit a wall of linker errors.
+| Build | Konsole | Requires | Typical systems |
+|---|---|---|---|
+| `Konsole-x86_64.AppImage` | 26.08.0 | glibc **2.38+** | Ubuntu 24.04+, Debian 13+, Fedora 39+, rolling |
+| `Konsole-jammy-x86_64.AppImage` | 24.08.1 | glibc **2.35+** | Ubuntu 22.04 |
 
-Known-good: Ubuntu 24.04+, Debian 13+, Fedora 39+, and current rolling releases.
-Anything with glibc 2.38 or newer.
+`install.sh` detects your glibc and downloads the right one — you do not need to
+choose. Force it with `BUILD=current` or `BUILD=legacy` if you want to.
 
-Qt6 and KDE Frameworks are bundled. GPU-driver-coupled libraries (`libEGL`,
-`libGL`) and core system libraries are deliberately **not** bundled — bundling
-them breaks hardware acceleration — so the host supplies those. Any desktop
-install already has them; the full list is in
-[`build/host-deps.txt`](build/host-deps.txt).
+Even the legacy build is a year newer than the 23.08 Ubuntu 24.04 ships, and
+several years newer than what 22.04 has.
+
+Anything older than glibc 2.35 is out of scope.
 
 ## Configuration
 
@@ -161,13 +160,17 @@ Trigger **Build Konsole AppImage** from the Actions tab. Inputs:
 | Input | Meaning |
 |---|---|
 | `neon_channel` | `user` (stable), `testing`, or `unstable` |
-| `publish_release` | also attach the result to a GitHub release |
+| `targets` | `both`, `current` (noble only), or `legacy` (jammy only) |
+| `publish_release` | also attach the results to a GitHub release |
 
 Or locally. There is a `justfile`; run `just` to see everything:
 
 ```sh
-just build          # build in a container
-just test           # verify the result
+just build          # current build (noble base)
+just build-legacy   # legacy build (jammy base, runs on 22.04)
+just build-all      # both, exactly as CI does
+just test           # verify the current build
+just test-legacy    # verify the legacy build and run it on a real 22.04
 just test-clean     # verify in a bare container, as a clean machine sees it
 just install        # install to ~/AppImages
 just host-deps      # list what the bundle expects from the host

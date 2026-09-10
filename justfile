@@ -25,7 +25,7 @@ default:
 
 # ---------------------------------------------------------------- build ------
 
-# Build the AppImage (container; ~5 min, ~1.5 GB of downloads)
+# Build the current AppImage (noble base, glibc 2.38+; ~5 min)
 [group('build')]
 build:
     @printf '{{BLUE}}==>{{NC}} Building from KDE neon channel {{BOLD}}{{NEON}}{{NC}}\n'
@@ -35,6 +35,26 @@ build:
         {{IMAGE}} bash /work/build/build-appimage.sh
     @just _built
 
+# Build the legacy AppImage (jammy base, runs on Ubuntu 22.04)
+[group('build')]
+build-legacy:
+    @printf '{{BLUE}}==>{{NC}} Building legacy target (jammy / glibc 2.35)\n'
+    mkdir -p dist-jammy
+    docker run --rm -v "$PWD:/work" -w /work \
+        -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+        -e NEON_CHANNEL='{{NEON}}' \
+        -e NEON_DIST=jammy \
+        -e STABLE_COPY=1 \
+        -e UPDATE_INFO='gh-releases-zsync|thereisnotime|konsole-appimage|latest|Konsole-jammy-x86_64.AppImage.zsync' \
+        -e OUT_DIR=/work/dist-jammy \
+        ubuntu:22.04 bash /work/build/build-appimage.sh
+    @printf '\n{{GREEN}}built:{{NC}}\n'
+    @ls -lh dist-jammy/ | tail -n +2 | awk '{printf "  %-42s %s\n", $9, $5}'
+
+# Build both targets exactly as CI does (stable names + zsync)
+[group('build')]
+build-all: build-release build-legacy
+
 # Build exactly as CI does (stable-named copy + zsync update info)
 [group('build')]
 build-release:
@@ -43,7 +63,7 @@ build-release:
         -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
         -e NEON_CHANNEL='{{NEON}}' \
         -e STABLE_COPY=1 \
-        -e UPDATE_INFO='gh-releases-zsync|thereisnotime|konsole-appimage|latest|Konsole-*-x86_64.AppImage.zsync' \
+        -e UPDATE_INFO='gh-releases-zsync|thereisnotime|konsole-appimage|latest|Konsole-x86_64.AppImage.zsync' \
         {{IMAGE}} bash /work/build/build-appimage.sh
     @just _built
 
@@ -64,6 +84,25 @@ _built:
 [group('test')]
 test:
     @bash build/smoke-test.sh {{DIST}}
+
+# Verify the legacy build, and prove it runs on Ubuntu 22.04
+[group('test')]
+test-legacy:
+    @bash build/smoke-test.sh dist-jammy
+    @printf '\n{{BLUE}}==>{{NC}} Running it on a real Ubuntu 22.04\n'
+    @docker run --rm -v "$PWD:/work" -w /work ubuntu:22.04 bash -c '\
+        export DEBIAN_FRONTEND=noninteractive APPIMAGE_EXTRACT_AND_RUN=1; \
+        apt-get update -qq >/dev/null 2>&1; \
+        for p in $(cat build/host-deps.txt); do case "$p" in libasound2t64) p=libasound2 ;; esac; \
+            apt-get install -y -qq "$p" >/dev/null 2>&1; done; \
+        echo "host: $(getconf GNU_LIBC_VERSION)"; \
+        cd /tmp && QT_QPA_PLATFORM=offscreen /work/dist-jammy/Konsole-*-jammy-x86_64.AppImage --version'
+
+# Clean both build outputs
+[group('build')]
+clean-all:
+    rm -rf {{DIST}} dist-jammy squashfs-root
+    @printf '{{GREEN}}cleaned{{NC}}\n' 
 
 # Verify in a bare container, the way a clean machine would see it
 [group('test')]
@@ -112,16 +151,16 @@ run:
 
 # --------------------------------------------------------------- release -----
 
-# Trigger the GitHub build (channel=user|testing|unstable)
+# Trigger the GitHub build (targets=both|current|legacy)
 [group('release')]
-ci-build channel=NEON:
-    gh workflow run build-appimage.yml -f neon_channel={{channel}} -f publish_release=false
+ci-build targets='both' channel=NEON:
+    gh workflow run build-appimage.yml -f neon_channel={{channel}} -f targets={{targets}} -f publish_release=false
     @printf '{{DIM}}watch with: just ci-watch{{NC}}\n'
 
-# Trigger a GitHub build and publish a release
+# Trigger a GitHub build and publish a release (targets=both|current|legacy)
 [group('release')]
-ci-release channel=NEON:
-    gh workflow run build-appimage.yml -f neon_channel={{channel}} -f publish_release=true
+ci-release targets='both' channel=NEON:
+    gh workflow run build-appimage.yml -f neon_channel={{channel}} -f targets={{targets}} -f publish_release=true
     @printf '{{DIM}}watch with: just ci-watch{{NC}}\n'
 
 # Watch the most recent CI run

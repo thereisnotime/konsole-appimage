@@ -2,3 +2,4 @@ dist/
 AppDir/
 *.AppImage
 *.zsync
+dist-jammy/

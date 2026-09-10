@@ -9,8 +9,14 @@ on:
         required: true
         default: user
         options: [user, testing, unstable]
+      targets:
+        description: "Which builds to produce"
+        type: choice
+        required: true
+        default: both
+        options: [both, current, legacy]
       publish_release:
-        description: "Attach the AppImage to a GitHub release"
+        description: "Attach the AppImages to a GitHub release"
         type: boolean
         required: false
         default: false
@@ -20,57 +26,71 @@ permissions:
 
 jobs:
   build:
-    # noble runner, matching the container and the target hosts
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # noble: current Konsole, glibc 2.38+ (Ubuntu 24.04+, Debian 13+)
+          - dist: noble
+            image: "ubuntu:24.04"
+            enabled_for: "both current"
+            zsync: "Konsole-x86_64.AppImage.zsync"
+          # jammy: older Konsole, glibc 2.35+ so Ubuntu 22.04 works
+          - dist: jammy
+            image: "ubuntu:22.04"
+            enabled_for: "both legacy"
+            zsync: "Konsole-jammy-x86_64.AppImage.zsync"
 
     steps:
       - uses: actions/checkout@v5
 
-      # The build runs in a container rather than on the runner directly.
-      # The runner carries a lot of preinstalled libraries that would otherwise
-      # leak into the AppDir, and the neon repo must never touch a system whose
-      # Qt6 stack matters.
-      - name: Build AppImage in ubuntu:24.04
+      - name: Should this target run?
+        id: gate
+        run: |
+          if [[ " ${{ matrix.enabled_for }} " == *" ${{ inputs.targets }} "* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "skipping ${{ matrix.dist }} (targets=${{ inputs.targets }})"
+          fi
+
+      # Built in a container, not on the runner: the runner's preinstalled
+      # libraries would leak into the AppDir, and the container base has to
+      # match the neon dist or the artifact requires the wrong glibc.
+      - name: Build ${{ matrix.dist }} in ${{ matrix.image }}
+        if: steps.gate.outputs.run == 'true'
         run: |
           docker run --rm \
-            -v "$PWD:/work" \
-            -w /work \
+            -v "$PWD:/work" -w /work \
             -e NEON_CHANNEL="${{ inputs.neon_channel }}" \
-            -e HOST_UID="$(id -u)" \
-            -e HOST_GID="$(id -g)" \
+            -e NEON_DIST="${{ matrix.dist }}" \
+            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
             -e STABLE_COPY=1 \
-            -e UPDATE_INFO="gh-releases-zsync|${{ github.repository_owner }}|${{ github.event.repository.name }}|latest|Konsole-*-x86_64.AppImage.zsync" \
-            ubuntu:24.04 \
+            -e UPDATE_INFO="gh-releases-zsync|${{ github.repository_owner }}|${{ github.event.repository.name }}|latest|${{ matrix.zsync }}" \
+            ${{ matrix.image }} \
             bash /work/build/build-appimage.sh
 
       - name: Show manifest and checksums
-        run: |
-          cat dist/manifest.txt
-          echo
-          cat dist/SHA256SUMS
+        if: steps.gate.outputs.run == 'true'
+        run: cat dist/manifest.txt; echo; cat dist/SHA256SUMS
 
-      - name: Read version
-        id: ver
-        run: echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
-
-      # The AppImage deliberately does not bundle GPU-driver-coupled libraries
-      # (libEGL, libGL) -- bundling them breaks hardware acceleration. Any
-      # desktop has them; a headless runner does not, so install them to be
-      # able to launch the binary at all.
-      # The AppImage deliberately does not bundle GPU-driver-coupled or core
-      # system libraries. build/host-deps.txt is the same list `just test-clean`
-      # uses locally, so the two environments cannot drift apart.
+      # Same list `just test-clean` uses locally, so the environments cannot
+      # drift. libasound2t64 is noble-only.
       - name: Install runtime deps for the smoke test
+        if: steps.gate.outputs.run == 'true'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq $(tr '\n' ' ' < build/host-deps.txt)
+          sudo apt-get install -y -qq $(tr '\n' ' ' < build/host-deps.txt) || true
 
       - name: Smoke test
+        if: steps.gate.outputs.run == 'true'
         run: bash build/smoke-test.sh dist
 
       - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.run == 'true'
         with:
-          name: konsole-appimage-${{ steps.ver.outputs.version }}
+          name: konsole-appimage-${{ matrix.dist }}
           path: |
             dist/*.AppImage
             dist/*.zsync
@@ -78,38 +98,74 @@ jobs:
             dist/manifest.txt
           if-no-files-found: error
 
-      - name: Publish release
-        if: ${{ inputs.publish_release }}
+  release:
+    needs: build
+    if: ${{ inputs.publish_release }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect assets
+        id: collect
+        run: |
+          mkdir -p out
+          # Each target ships its own SHA256SUMS and manifest; merge them so the
+          # release carries one of each rather than two colliding files.
+          : > out/SHA256SUMS
+          : > out/manifest.txt
+          for d in artifacts/*/; do
+            name="$(basename "$d")"
+            cp "$d"/*.AppImage "$d"/*.zsync out/ 2>/dev/null || true
+            [ -f "$d/SHA256SUMS" ] && cat "$d/SHA256SUMS" >> out/SHA256SUMS
+            if [ -f "$d/manifest.txt" ]; then
+              { echo "### $name"; cat "$d/manifest.txt"; echo; } >> out/manifest.txt
+            fi
+          done
+          # The version of the current (noble) build names the release.
+          ver="$(grep -oE 'Konsole-[0-9.]+-x86_64\.AppImage' out/SHA256SUMS | head -1 \
+                 | sed -E 's/Konsole-([0-9.]+)-x86_64.*/\1/')"
+          [ -n "$ver" ] || ver="$(grep -oE 'Konsole-[0-9.]+-jammy' out/SHA256SUMS | head -1 | sed -E 's/Konsole-([0-9.]+)-jammy/\1/')"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          ls -lh out/
+
+      - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="v${{ steps.ver.outputs.version }}"
+          tag="v${{ steps.collect.outputs.version }}"
           notes=$(mktemp)
           {
-            echo "Unofficial Konsole AppImage, built from KDE neon packages on an Ubuntu 24.04 base."
+            echo "Unofficial Konsole AppImage, built from KDE neon packages."
             echo
             echo "Not affiliated with or endorsed by KDE. See NOTICE.md."
             echo
-            echo "Install:"
+            echo "| Build | For | Requires |"
+            echo "|---|---|---|"
+            echo "| \`Konsole-x86_64.AppImage\` | Ubuntu 24.04+, Debian 13+, Fedora 39+ | glibc 2.38+ |"
+            echo "| \`Konsole-jammy-x86_64.AppImage\` | Ubuntu 22.04 | glibc 2.35+ |"
+            echo
+            echo "\`install.sh\` picks the right one from your glibc:"
             echo
             echo '```sh'
             echo "curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/master/install.sh | bash"
             echo '```'
             echo
             echo '```'
-            cat dist/manifest.txt
+            cat out/manifest.txt
             echo '```'
           } > "$notes"
 
-          # Collect whatever actually exists rather than relying on globs that
-          # abort the step when one of them matches nothing.
           shopt -s nullglob
-          assets=( dist/*.AppImage dist/*.zsync dist/SHA256SUMS dist/manifest.txt )
+          assets=( out/*.AppImage out/*.zsync out/SHA256SUMS out/manifest.txt )
           printf 'uploading:\n'; printf '  %s\n' "${assets[@]}"
-          test ${#assets[@]} -gt 0 || { echo "no assets to upload"; exit 1; }
+          test ${#assets[@]} -gt 0 || { echo "no assets"; exit 1; }
 
           gh release create "$tag" \
-            --title "Konsole ${{ steps.ver.outputs.version }}" \
+            --title "Konsole ${{ steps.collect.outputs.version }}" \
             --notes-file "$notes" \
             "${assets[@]}" \
           || gh release upload "$tag" "${assets[@]}" --clobber

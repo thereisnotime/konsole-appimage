@@ -14,13 +14,20 @@ DIST="${1:-dist}"
 [ -d "$DIST" ] || { echo "no such directory: $DIST" >&2; exit 1; }
 
 VERSION="$(cat "$DIST/version.txt")"
-APPIMAGE="$DIST/Konsole-${VERSION}-x86_64.AppImage"
-STABLE="$DIST/Konsole-x86_64.AppImage"
+# Which base this artifact was built against ("noble" or "jammy"). Older
+# builds have no dist.txt, so default to noble.
+NEON_DIST="$(cat "$DIST/dist.txt" 2>/dev/null || echo noble)"
+if [ "$NEON_DIST" = "noble" ]; then SUFFIX=""; else SUFFIX="-${NEON_DIST}"; fi
+# The build base's glibc is the ceiling; 2.39 for noble, 2.35 for jammy.
+GLIBC_MAX="$(cat "$DIST/glibc-max.txt" 2>/dev/null || echo 2.39)"
+
+APPIMAGE="$DIST/Konsole-${VERSION}${SUFFIX}-x86_64.AppImage"
+STABLE="$DIST/Konsole${SUFFIX}-x86_64.AppImage"
 
 fail() { printf '\033[1;31mFAIL\033[0m %s\n' "$*"; exit 1; }
 ok()   { printf '\033[1;32mok\033[0m   %s\n' "$*"; }
 
-echo "testing $APPIMAGE (version $VERSION)"
+echo "testing $APPIMAGE (version $VERSION, base $NEON_DIST, glibc ceiling $GLIBC_MAX)"
 
 [ -f "$APPIMAGE" ] || fail "versioned AppImage missing: $APPIMAGE"
 ok "versioned AppImage present"
@@ -68,10 +75,18 @@ ok "qt.conf present"
 
 # xcb alone means the bundle cannot start natively on Wayland, and without
 # offscreen it cannot run headless at all.
-for plat in libqxcb.so libqoffscreen.so libqwayland.so; do
+for plat in libqxcb.so libqoffscreen.so; do
     [ -e "$root/usr/plugins/platforms/$plat" ] \
         || fail "platform plugin missing: $plat"
 done
+# Qt renamed this: 6.11 ships libqwayland.so, 6.7 (neon jammy) ships
+# libqwayland-generic.so. Either satisfies the requirement.
+if [ -e "$root/usr/plugins/platforms/libqwayland.so" ] \
+   || [ -e "$root/usr/plugins/platforms/libqwayland-generic.so" ]; then
+    :
+else
+    fail "no wayland platform plugin (looked for libqwayland.so and libqwayland-generic.so)"
+fi
 ok "platform plugins present (xcb, offscreen, wayland)"
 
 # No bundled binary may reference a KDE/Qt library that is not in the bundle.
@@ -117,9 +132,9 @@ max="$(find "$root/usr" -type f \( -name '*.so*' -o -name konsole \) \
        -exec objdump -T {} \; 2>/dev/null \
        | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -uV | tail -1)"
 [ -n "$max" ] || fail "could not determine glibc requirement"
-[ "$(printf '%s\nGLIBC_2.39\n' "$max" | sort -V | tail -1)" = "GLIBC_2.39" ] \
-    || fail "requires $max, above the noble target GLIBC_2.39"
-ok "max glibc requirement $max (<= GLIBC_2.39)"
+[ "$(printf '%s\nGLIBC_%s\n' "$max" "$GLIBC_MAX" | sort -V | tail -1)" = "GLIBC_$GLIBC_MAX" ] \
+    || fail "requires $max, above the $NEON_DIST target GLIBC_$GLIBC_MAX"
+ok "max glibc requirement $max (<= GLIBC_$GLIBC_MAX)"
 
 if [ -n "$(ls "$DIST"/*.zsync 2>/dev/null)" ]; then
     ok "zsync present"

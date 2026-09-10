@@ -7,6 +7,7 @@
 # Environment:
 #   INSTALL_DIR   where to put the AppImage   (default: ~/AppImages)
 #   VERSION       specific tag, e.g. v26.08.0 (default: latest)
+#   BUILD         current|legacy              (default: chosen from your glibc)
 #   NO_DESKTOP    set to 1 to skip the .desktop entry
 #
 set -euo pipefail
@@ -14,7 +15,7 @@ set -euo pipefail
 REPO="thereisnotime/konsole-appimage"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/AppImages}"
 VERSION="${VERSION:-latest}"
-ASSET="Konsole-x86_64.AppImage"
+ASSET=""   # chosen from the detected glibc below
 
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
@@ -35,17 +36,41 @@ detect_glibc() {
     printf '%s' "$v"
 }
 
+# Two builds are published:
+#   noble  - current Konsole, needs glibc 2.38+ (Ubuntu 24.04+, Debian 13+, ...)
+#   jammy  - older Konsole,   needs glibc 2.35+ (Ubuntu 22.04)
+# Pick whichever the running system can actually load.
+glibc_at_least() {
+    awk -v have="$1" -v need="$2" 'BEGIN {
+        split(have, h, "."); split(need, n, ".");
+        exit !((h[1] > n[1]) || (h[1] == n[1] && h[2] >= n[2]))
+    }'
+}
+
 have="$(detect_glibc)"
 if [ -n "$have" ]; then
-    # Compare major.minor numerically. String sorting gets this wrong.
-    if ! awk -v have="$have" -v need="2.38" 'BEGIN {
-            split(have, h, "."); split(need, n, ".");
-            exit !((h[1] > n[1]) || (h[1] == n[1] && h[2] >= n[2]))
-        }'; then
-        die "glibc $have is too old, need 2.38 or newer"
+    if glibc_at_least "$have" 2.38; then
+        ASSET="Konsole-x86_64.AppImage"
+        log "glibc $have -> current build"
+    elif glibc_at_least "$have" 2.35; then
+        ASSET="Konsole-jammy-x86_64.AppImage"
+        log "glibc $have -> legacy build (older Konsole, but this system cannot load the current one)"
+    else
+        die "glibc $have is too old, need 2.35 or newer"
     fi
 else
-    log "Could not detect glibc version, continuing anyway"
+    ASSET="Konsole-x86_64.AppImage"
+    log "Could not detect glibc version, assuming the current build"
+fi
+
+# Let the user force a specific one.
+if [ -n "${BUILD:-}" ]; then
+    case "$BUILD" in
+        current|noble) ASSET="Konsole-x86_64.AppImage" ;;
+        legacy|jammy)  ASSET="Konsole-jammy-x86_64.AppImage" ;;
+        *) die "BUILD must be 'current' or 'legacy', got '$BUILD'" ;;
+    esac
+    log "BUILD=$BUILD -> $ASSET"
 fi
 
 if [ "$VERSION" = "latest" ]; then
