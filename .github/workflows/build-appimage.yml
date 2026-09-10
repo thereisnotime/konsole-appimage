@@ -38,6 +38,7 @@ jobs:
             -e NEON_CHANNEL="${{ inputs.neon_channel }}" \
             -e HOST_UID="$(id -u)" \
             -e HOST_GID="$(id -g)" \
+            -e STABLE_COPY=1 \
             -e UPDATE_INFO="gh-releases-zsync|${{ github.repository_owner }}|${{ github.event.repository.name }}|latest|Konsole-*-x86_64.AppImage.zsync" \
             ubuntu:24.04 \
             bash /work/build/build-appimage.sh
@@ -90,13 +91,26 @@ jobs:
             echo
             echo "Not affiliated with or endorsed by KDE. See NOTICE.md."
             echo
+            echo "Install:"
+            echo
+            echo '```sh'
+            echo "curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/master/install.sh | bash"
+            echo '```'
+            echo
             echo '```'
             cat dist/manifest.txt
             echo '```'
           } > "$notes"
+
+          # Collect whatever actually exists rather than relying on globs that
+          # abort the step when one of them matches nothing.
+          shopt -s nullglob
+          assets=( dist/*.AppImage dist/*.zsync dist/SHA256SUMS dist/manifest.txt )
+          printf 'uploading:\n'; printf '  %s\n' "${assets[@]}"
+          test ${#assets[@]} -gt 0 || { echo "no assets to upload"; exit 1; }
+
           gh release create "$tag" \
             --title "Konsole ${{ steps.ver.outputs.version }}" \
             --notes-file "$notes" \
-            dist/*.AppImage dist/*.zsync dist/SHA256SUMS dist/manifest.txt \
-          || gh release upload "$tag" \
-               dist/*.AppImage dist/*.zsync dist/SHA256SUMS dist/manifest.txt --clobber
+            "${assets[@]}" \
+          || gh release upload "$tag" "${assets[@]}" --clobber

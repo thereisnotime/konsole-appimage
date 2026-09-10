@@ -224,11 +224,20 @@ if [ -n "${UPDATE_INFO:-}" ]; then
     log "Update info: $UPDATE_INFO"
 fi
 
-appimagetool "${APPIMAGETOOL_ARGS[@]}" "$APPDIR" "$OUTPUT"
+# appimagetool writes the .zsync into the CURRENT WORKING DIRECTORY, not
+# alongside the output path, so run it from OUT_DIR or the zsync goes missing.
+( cd "$OUT_DIR" && appimagetool "${APPIMAGETOOL_ARGS[@]}" "$APPDIR" "$(basename "$OUTPUT")" )
 chmod +x "$OUTPUT"
 
+# A stable filename makes the /releases/latest/download/ URL usable, which is
+# what install.sh and any curl one-liner depend on.
+if [ "${STABLE_COPY:-0}" = "1" ]; then
+    cp "$OUTPUT" "$OUT_DIR/Konsole-${ARCH}.AppImage"
+    log "Stable-named copy: Konsole-${ARCH}.AppImage"
+fi
+
 log "Checksums"
-( cd "$OUT_DIR" && sha256sum ./*.AppImage ./*.zsync 2>/dev/null > SHA256SUMS || sha256sum ./*.AppImage > SHA256SUMS )
+( cd "$OUT_DIR" && shopt -s nullglob && sha256sum ./*.AppImage ./*.zsync > SHA256SUMS )
 cat "$OUT_DIR/SHA256SUMS"
 
 # So the caller (CI) can pick these up without re-parsing.

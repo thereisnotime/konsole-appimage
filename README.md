@@ -10,23 +10,55 @@ libraries.
 > **Unofficial build.** Not affiliated with or endorsed by KDE. See
 > [NOTICE.md](NOTICE.md).
 
-## Install
-
-Grab the latest `.AppImage` from [Releases](../../releases):
+## Quickstart
 
 ```sh
-chmod +x Konsole-*-x86_64.AppImage
-./Konsole-*-x86_64.AppImage
+curl -fsSL https://raw.githubusercontent.com/thereisnotime/konsole-appimage/master/install.sh | bash
 ```
 
-Verify it first if you like:
+Downloads the latest release, verifies its SHA256, installs to `~/AppImages/`
+and adds a desktop entry. No root, no package manager, no repository to add.
 
 ```sh
+INSTALL_DIR=~/bin ./install.sh      # somewhere else
+VERSION=v26.08.0  ./install.sh      # a specific release
+NO_DESKTOP=1      ./install.sh      # skip the .desktop entry
+```
+
+Prefer to pipe nothing into a shell? Reasonable. Grab it directly:
+
+```sh
+curl -fLO https://github.com/thereisnotime/konsole-appimage/releases/latest/download/Konsole-x86_64.AppImage
+curl -fLO https://github.com/thereisnotime/konsole-appimage/releases/latest/download/SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
+chmod +x Konsole-x86_64.AppImage
+./Konsole-x86_64.AppImage
 ```
 
-That is the whole install. No package manager, no root, no repository to add.
-Delete the file to uninstall.
+or with wget:
+
+```sh
+wget https://github.com/thereisnotime/konsole-appimage/releases/latest/download/Konsole-x86_64.AppImage
+chmod +x Konsole-x86_64.AppImage && ./Konsole-x86_64.AppImage
+```
+
+Versioned filenames (`Konsole-26.08.0-x86_64.AppImage`) are published alongside
+the stable one on every [release](../../releases), if you want to keep several
+around.
+
+To uninstall, delete the file.
+
+## Updating
+
+Each AppImage embeds zsync update information, so
+[AppImageUpdate](https://github.com/AppImage/AppImageUpdate) fetches only the
+changed blocks instead of the full ~100 MB:
+
+```sh
+AppImageUpdate Konsole-x86_64.AppImage
+```
+
+Or just re-run the install command.
 
 ## Why this exists
 
