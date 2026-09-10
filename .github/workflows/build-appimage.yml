@@ -1,0 +1,67 @@
+name: Build Konsole AppImage
+
+on:
+  workflow_dispatch:
+    inputs:
+      neon_channel:
+        description: "KDE neon channel to pull Konsole from"
+        type: choice
+        required: true
+        default: user
+        options: [user, testing, unstable]
+      publish_release:
+        description: "Attach the AppImage to a GitHub release"
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # noble runner, matching the container and the target hosts
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # The build runs in a container rather than on the runner directly.
+      # The runner carries a lot of preinstalled libraries that would otherwise
+      # leak into the AppDir, and the neon repo must never touch a system whose
+      # Qt6 stack matters.
+      - name: Build AppImage in ubuntu:24.04
+        run: |
+          docker run --rm \
+            -v "$PWD:/work" \
+            -e NEON_CHANNEL="${{ inputs.neon_channel }}" \
+            -w /work \
+            ubuntu:24.04 \
+            bash /work/build/build-appimage.sh
+
+      - name: Show manifest
+        run: cat dist/manifest.txt
+
+      - name: Read version
+        id: ver
+        run: echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: konsole-appimage-${{ steps.ver.outputs.version }}
+          path: |
+            dist/*.AppImage
+            dist/manifest.txt
+          if-no-files-found: error
+
+      - name: Publish release
+        if: ${{ inputs.publish_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v${{ steps.ver.outputs.version }}"
+          gh release create "$tag" \
+            --title "Konsole ${{ steps.ver.outputs.version }}" \
+            --notes-file dist/manifest.txt \
+            dist/*.AppImage \
+          || gh release upload "$tag" dist/*.AppImage --clobber

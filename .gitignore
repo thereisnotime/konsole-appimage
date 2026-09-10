@@ -1,0 +1,4 @@
+dist/
+AppDir/
+*.AppImage
+*.zsync
