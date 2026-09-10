@@ -34,10 +34,13 @@
       only build/host-deps.txt: all 12 checks pass)
 - [x] 3.7 Confirm the published install path works end to end (install.sh from
       a clean HOME: download, checksum, desktop entry, runs)
-- [ ] 3.8 Confirm the View -> Split View menu is present (manual, needs a human
-      at the GUI)
-- [ ] 3.9 Confirm host Qt6 apps (VirtualBox, Wireshark) still start
-      (expected trivially: nothing was installed on the host)
+- [x] 3.8 Confirm the View -> Split View menu is present (manual: confirmed
+      working in the bundled Konsole 26.08)
+- [x] 3.9 Confirm Wayland works on a real session (manual: confirmed)
+- [x] 3.10 Confirm host Qt6 apps still start (trivially: nothing was ever
+      installed on the host; system Qt6 remains 6.4.2)
+- [x] 3.11 Confirm the published artifact matches the local build
+      (sha256sum -c against releases/latest: OK)
 
 ## 4. Publish
 
@@ -46,4 +49,4 @@
 - [x] 4.2 Run the pipeline once manually and attach the first release
       (run 34522024754 green; v26.08.0 with AppImage, stable copy, zsync,
       SHA256SUMS and manifest)
-- [ ] 4.3 `openspec archive build-konsole-appimage --skip-specs -y`
+- [x] 4.3 `openspec archive build-konsole-appimage --skip-specs -y`
