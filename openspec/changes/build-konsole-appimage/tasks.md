@@ -30,13 +30,20 @@
       system libraries, not the bundle (`ls` -> `/lib/x86_64-linux-gnu/...`)
 - [x] 3.4 Confirm host toolchain reachable (`kubectl`, `docker`, `gh` on PATH)
 - [x] 3.5 Confirm max required glibc is 2.38, below the 2.39 target
-- [ ] 3.6 Confirm the View -> Split View menu is present (manual, needs a human
+- [x] 3.6 Confirm it runs headless and on a clean machine (bare container with
+      only build/host-deps.txt: all 12 checks pass)
+- [x] 3.7 Confirm the published install path works end to end (install.sh from
+      a clean HOME: download, checksum, desktop entry, runs)
+- [ ] 3.8 Confirm the View -> Split View menu is present (manual, needs a human
       at the GUI)
-- [ ] 3.7 Confirm host Qt6 apps (VirtualBox, Wireshark) still start
+- [ ] 3.9 Confirm host Qt6 apps (VirtualBox, Wireshark) still start
       (expected trivially: nothing was installed on the host)
 
 ## 4. Publish
 
-- [ ] 4.1 Create the public GitHub repo and push
-- [ ] 4.2 Run the pipeline once manually and attach the first release
+- [x] 4.1 Create the public GitHub repo and push
+      (github.com/thereisnotime/konsole-appimage)
+- [x] 4.2 Run the pipeline once manually and attach the first release
+      (run 34522024754 green; v26.08.0 with AppImage, stable copy, zsync,
+      SHA256SUMS and manifest)
 - [ ] 4.3 `openspec archive build-konsole-appimage --skip-specs -y`
