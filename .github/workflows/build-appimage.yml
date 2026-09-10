@@ -53,6 +53,18 @@ jobs:
         id: ver
         run: echo "version=$(cat dist/version.txt)" >> "$GITHUB_OUTPUT"
 
+      # The AppImage deliberately does not bundle GPU-driver-coupled libraries
+      # (libEGL, libGL) -- bundling them breaks hardware acceleration. Any
+      # desktop has them; a headless runner does not, so install them to be
+      # able to launch the binary at all.
+      # The AppImage deliberately does not bundle GPU-driver-coupled or core
+      # system libraries. build/host-deps.txt is the same list `just test-clean`
+      # uses locally, so the two environments cannot drift apart.
+      - name: Install runtime deps for the smoke test
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq $(tr '\n' ' ' < build/host-deps.txt)
+
       - name: Smoke test
         run: bash build/smoke-test.sh dist
 

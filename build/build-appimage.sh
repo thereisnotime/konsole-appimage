@@ -38,8 +38,11 @@ log "Installing Konsole"
 # plugin/QML/translation directories, and to qmlimportscanner to work out which
 # QML modules to deploy (KF6 pulls in qt6-declarative, so the QML module runs
 # whether or not Konsole itself uses QML).
+# qt6-wayland is a RUNTIME dependency: without its platform plugin the AppImage
+# cannot start natively on a Wayland session, which is the default on Plasma 6.
 apt-get install -y -qq --no-install-recommends \
-    konsole breeze-icon-theme qt6-base-dev-tools qt6-declarative-dev-tools
+    konsole breeze-icon-theme qt6-wayland \
+    qt6-base-dev-tools qt6-declarative-dev-tools
 
 # Neon's layout does not match Ubuntu's, so find qmake rather than assume.
 QMAKE="$(command -v qmake6 || true)"
@@ -142,10 +145,70 @@ for d in /usr/share/icons/breeze /usr/share/icons/breeze-dark; do
     [ -d "$d" ] && cp -r "$d" "$APPDIR/usr/share/icons/"
 done
 
-# KF6 plugins are dlopened (KIO workers, KAuth backends, ...).
+# KF6 plugins are dlopened (KIO workers, KAuth backends, ...), so linuxdeploy
+# never sees them and they have to be copied by hand.
 if [ -d "/usr/lib/${ARCH}-linux-gnu/qt6/plugins/kf6" ]; then
     install -d "$APPDIR/usr/plugins"
     cp -r "/usr/lib/${ARCH}-linux-gnu/qt6/plugins/kf6" "$APPDIR/usr/plugins/"
+fi
+
+# linuxdeploy-plugin-qt bundles only the xcb platform plugin. Without wayland
+# the AppImage cannot start natively on a Wayland session; without offscreen it
+# cannot run headless at all, which also makes it untestable in CI.
+QT_PLUGIN_SRC="/usr/lib/${ARCH}-linux-gnu/qt6/plugins"
+if [ -d "$QT_PLUGIN_SRC/platforms" ]; then
+    install -d "$APPDIR/usr/plugins/platforms"
+    # Qt6 names it libqwayland.so; libqwayland-generic.so was the Qt5 name.
+    for plat in libqoffscreen.so libqminimal.so libqwayland.so \
+                libqwayland-generic.so libqwayland-egl.so libqeglfs.so; do
+        [ -e "$QT_PLUGIN_SRC/platforms/$plat" ] || continue
+        cp "$QT_PLUGIN_SRC/platforms/$plat" "$APPDIR/usr/plugins/platforms/"
+        log "  extra platform plugin: $plat"
+    done
+    # Wayland needs its shell-integration and decoration plugins too.
+    for extra in wayland-shell-integration wayland-decoration-client wayland-graphics-integration-client; do
+        [ -d "$QT_PLUGIN_SRC/$extra" ] || continue
+        cp -r "$QT_PLUGIN_SRC/$extra" "$APPDIR/usr/plugins/"
+        log "  extra plugin dir: $extra"
+    done
+fi
+
+# Everything copied above bypassed linuxdeploy, so it has neither an RPATH nor
+# a resolved dependency closure. Both have to be fixed by hand.
+if [ -d "$APPDIR/usr/plugins" ]; then
+    # A hand-copied plugin has no RPATH, so it cannot find the bundled
+    # libraries -- and since AppRun deliberately does not export
+    # LD_LIBRARY_PATH, nothing else will find them either.
+    log "Setting RPATH on hand-copied plugins"
+    while IFS= read -r so; do
+        rel="$(realpath --relative-to="$(dirname "$so")" "$APPDIR/usr/lib")"
+        patchelf --set-rpath "\$ORIGIN/$rel" "$so" 2>/dev/null || true
+    done < <(find "$APPDIR/usr/plugins" -name '*.so' -type f)
+
+    # Those plugins pull in KDE/Qt libraries that nothing else in the bundle
+    # references. They are absent on a non-KDE host, so resolve the closure and
+    # bundle them. Only KDE/Qt libraries are copied -- system and
+    # GPU-driver-coupled libraries must keep coming from the host.
+    log "Resolving KDE/Qt dependency closure for plugins"
+    for _pass in 1 2 3 4 5; do
+        added=0
+        while IFS= read -r elf; do
+            while IFS= read -r need; do
+                case "$need" in
+                    libKF6*|libkuri*|libkonsole*|libQt6*) ;;
+                    *) continue ;;
+                esac
+                [ -e "$APPDIR/usr/lib/$need" ] && continue
+                src="$(find /usr/lib/"${ARCH}"-linux-gnu -name "$need" -print -quit 2>/dev/null)"
+                [ -n "$src" ] || continue
+                cp -L "$src" "$APPDIR/usr/lib/$need"
+                patchelf --set-rpath '$ORIGIN' "$APPDIR/usr/lib/$need" 2>/dev/null || true
+                log "  bundled missing dependency: $need"
+                added=$((added + 1))
+            done < <(objdump -p "$elf" 2>/dev/null | awk '/NEEDED/{print $2}')
+        done < <(find "$APPDIR/usr/lib" "$APPDIR/usr/plugins" -name '*.so*' -type f)
+        [ "$added" -eq 0 ] && break
+    done
 fi
 
 # Translations for ki18n. Copying all of /usr/share/locale would add hundreds

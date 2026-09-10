@@ -112,12 +112,18 @@ libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6        # system, not the bundle
 | | |
 |---|---|
 | Requires | glibc **2.38** or newer, x86_64 |
+| Session | X11 and Wayland (both platform plugins are bundled) |
 | Tested on | Ubuntu 24.04 LTS, Plasma 5.27, X11 |
 | Host Qt6 | untouched — runs fine alongside Qt6 6.4.2 |
 | Size | ~103 MB |
 
-Runs on a Plasma 5 desktop, a Plasma 6 desktop, GNOME, or no desktop
-environment at all.
+Runs on a Plasma 5 desktop, a Plasma 6 desktop, GNOME, or headless.
+
+Qt6 and KDE Frameworks are bundled. GPU-driver-coupled libraries (`libEGL`,
+`libGL`) and core system libraries are deliberately **not** bundled — bundling
+them breaks hardware acceleration — so the host supplies those. Any desktop
+install already has them; the full list is in
+[`build/host-deps.txt`](build/host-deps.txt).
 
 ## Configuration
 
@@ -138,7 +144,18 @@ Trigger **Build Konsole AppImage** from the Actions tab. Inputs:
 | `neon_channel` | `user` (stable), `testing`, or `unstable` |
 | `publish_release` | also attach the result to a GitHub release |
 
-Or locally, with Docker:
+Or locally. There is a `justfile`; run `just` to see everything:
+
+```sh
+just build          # build in a container
+just test           # verify the result
+just test-clean     # verify in a bare container, as a clean machine sees it
+just install        # install to ~/AppImages
+just host-deps      # list what the bundle expects from the host
+just ci-release     # trigger a GitHub build and publish
+```
+
+Without `just`:
 
 ```sh
 docker run --rm -v "$PWD:/work" -w /work \
