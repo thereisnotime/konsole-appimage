@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest something for the packaging
+title: "[feature] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is for the **packaging**: new distribution targets, install options,
+        release artifacts, verification, and so on.
+
+        Features in Konsole itself go to [KDE](https://bugs.kde.org/enter_bug.cgi?product=konsole).
+        Nothing here can add a Konsole feature, since this repo repacks upstream
+        binaries without modifying them.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve
+      description: What are you actually trying to do, and what stops you today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you have already tried or considered
+      description: Including your distribution's package, the Flatpak, or building it yourself.

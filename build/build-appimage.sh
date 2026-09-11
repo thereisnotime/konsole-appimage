@@ -165,6 +165,23 @@ if [ -d "/usr/lib/${ARCH}-linux-gnu/qt6/plugins/kf6" ]; then
     cp -r "/usr/lib/${ARCH}-linux-gnu/qt6/plugins/kf6" "$APPDIR/usr/plugins/"
 fi
 
+# Konsole performs no privileged operations and has no spell checking, but the
+# KF6 plugin set drags in a KAuth polkit backend and three Sonnet spell-check
+# backends. Their dependencies (libpolkit-qt6-core-1, libhunspell, libaspell,
+# libvoikko) are not present on a non-KDE host, so keeping the plugins would
+# mean either four phantom host requirements or bundling libraries nothing uses.
+# Drop them.
+if [ -d "$APPDIR/usr/plugins/kf6" ]; then
+    for junk in kauth sonnet; do
+        if [ -e "$APPDIR/usr/plugins/kf6/$junk" ]; then
+            rm -rf "$APPDIR/usr/plugins/kf6/$junk"
+            log "  pruned unused plugin set: $junk"
+        fi
+    done
+    # Sonnet backends are sometimes installed loose rather than in a subdir.
+    find "$APPDIR/usr/plugins" -name 'sonnet_*.so' -delete 2>/dev/null || true
+fi
+
 # linuxdeploy-plugin-qt bundles only the xcb platform plugin. Without wayland
 # the AppImage cannot start natively on a Wayland session; without offscreen it
 # cannot run headless at all, which also makes it untestable in CI.

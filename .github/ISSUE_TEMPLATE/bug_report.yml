@@ -1,0 +1,89 @@
+name: Bug report
+description: Something is broken in the AppImage
+title: "[bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting.
+
+        This repository only **packages** Konsole. If the bug is in Konsole
+        itself and also happens with your distribution's Konsole, please report
+        it to [KDE's bug tracker](https://bugs.kde.org/enter_bug.cgi?product=konsole)
+        instead, where the people who can fix it will see it.
+
+        Report it here if it is about the AppImage: it will not start, a feature
+        works in the distro package but not here, missing icons or fonts,
+        installation problems.
+
+  - type: input
+    id: version
+    attributes:
+      label: AppImage version
+      description: "Output of: ./Konsole-*.AppImage --version"
+      placeholder: konsole 26.08.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Which build
+      options:
+        - "Konsole-x86_64.AppImage (current)"
+        - "Konsole-jammy-x86_64.AppImage (legacy)"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: system
+    attributes:
+      label: System
+      description: |
+        Please paste the output of:
+        ```sh
+        . /etc/os-release && echo "$PRETTY_NAME"
+        getconf GNU_LIBC_VERSION
+        echo "session: ${XDG_SESSION_TYPE:-unknown}, desktop: ${XDG_CURRENT_DESKTOP:-none}"
+        ```
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Terminal output
+      description: |
+        Run it from a terminal and paste everything it prints. If it will not
+        start at all, this is the single most useful thing you can include.
+      render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: "I checked that my glibc is 2.35 or newer (`getconf GNU_LIBC_VERSION`)"
+        - label: "I am using the build that matches my glibc, or let install.sh choose"
+        - label: "I checked this is not a Konsole bug that also occurs in my distro's package"

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Konsole bug (not the AppImage)
+    url: https://bugs.kde.org/enter_bug.cgi?product=konsole
+    about: Bugs in Konsole itself belong with KDE, not here. This repo only packages it.
+  - name: Ubuntu 22.04 or older
+    url: https://github.com/thereisnotime/konsole-appimage#two-builds
+    about: 22.04 needs the legacy build. install.sh picks it automatically.

@@ -1,5 +1,10 @@
 # Konsole AppImage
 
+[![Build](https://github.com/thereisnotime/konsole-appimage/actions/workflows/build-appimage.yml/badge.svg)](https://github.com/thereisnotime/konsole-appimage/actions/workflows/build-appimage.yml)
+[![Lint](https://github.com/thereisnotime/konsole-appimage/actions/workflows/lint.yml/badge.svg)](https://github.com/thereisnotime/konsole-appimage/actions/workflows/lint.yml)
+[![Latest release](https://img.shields.io/github/v/release/thereisnotime/konsole-appimage)](https://github.com/thereisnotime/konsole-appimage/releases/latest)
+[![Licence](https://img.shields.io/badge/licence-MIT-blue)](LICENSE)
+
 Current [Konsole](https://apps.kde.org/konsole/) as a single self-contained
 file, for distributions whose packaged Konsole is years behind.
 
@@ -205,6 +210,43 @@ version.
 
 Full rationale, including the alternatives that were rejected and why, is in
 [`openspec/changes/build-konsole-appimage/design.md`](openspec/changes/build-konsole-appimage/design.md).
+
+## Contributing
+
+Build and test loop, and the things that are easy to get wrong (the glibc floor,
+why `AppRun` exports almost nothing, why hand-copied plugins need an `RPATH`)
+are in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+Everything CI does runs locally in the same container:
+
+```sh
+just build-all && just test && just test-legacy && just test-clean && just lint
+```
+
+## Security
+
+[SECURITY.md](SECURITY.md) covers how to report a vulnerability, what you are
+trusting when you run this, how to verify a download, and what is deliberately
+not done yet (no GPG signing, builds are not reproducible).
+
+Worth knowing up front: **an AppImage is not a sandbox.** This one runs with
+your full privileges and spawns a normal shell with your real environment. That
+is the point — it is why the sandboxed Flatpak is unusable as a primary terminal
+— but it offers no isolation. Treat it as you would your distribution's Konsole.
+
+## Reporting problems
+
+[Open a bug report](../../issues/new?template=bug_report.yml). The template asks
+for your distribution, glibc version and the terminal output, which is usually
+enough to tell a packaging problem from a Konsole problem.
+
+**Bugs in Konsole itself belong with [KDE](https://bugs.kde.org/enter_bug.cgi?product=konsole).**
+This repository only packages upstream binaries without patching them, so if
+something also happens with your distribution's Konsole, KDE is where it will
+get fixed.
+
+Report it here if the AppImage will not start, if something works in the distro
+package but not here, or if icons, fonts or installation misbehave.
 
 ## Licence
 
