@@ -27,10 +27,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    # A build is ~3 minutes when neon's archive is healthy. Without this, a
-    # stalled apt would sit on GitHub's 6 hour default and burn the whole
-    # quota; better to fail and retry later.
-    timeout-minutes: 25
+    # ~3 minutes when neon's archive is healthy, but it has served as slowly as
+    # 300 KB/s, and a 25 minute cap killed an otherwise fine build. Generous
+    # enough to survive a bad mirror day, far short of GitHub's 6 hour default.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -71,6 +71,7 @@ jobs:
             -e NEON_DIST="${{ matrix.dist }}" \
             -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
             -e STABLE_COPY=1 \
+            -e APT_FORCE_IPV4=1 \
             -e UPDATE_INFO="gh-releases-zsync|${{ github.repository_owner }}|${{ github.event.repository.name }}|latest|${{ matrix.zsync }}" \
             ${{ matrix.image }} \
             bash /work/build/build-appimage.sh
