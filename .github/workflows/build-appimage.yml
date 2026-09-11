@@ -27,6 +27,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    # A build is ~3 minutes when neon's archive is healthy. Without this, a
+    # stalled apt would sit on GitHub's 6 hour default and burn the whole
+    # quota; better to fail and retry later.
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -102,6 +106,7 @@ jobs:
     needs: build
     if: ${{ inputs.publish_release }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 

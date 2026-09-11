@@ -32,6 +32,7 @@ build:
     docker run --rm -v "$PWD:/work" -w /work \
         -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
         -e NEON_CHANNEL='{{NEON}}' \
+        -e APT_FORCE_IPV4="${APT_FORCE_IPV4:-0}" \
         {{IMAGE}} bash /work/build/build-appimage.sh
     @just _built
 
@@ -43,6 +44,7 @@ build-legacy:
     docker run --rm -v "$PWD:/work" -w /work \
         -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
         -e NEON_CHANNEL='{{NEON}}' \
+        -e APT_FORCE_IPV4="${APT_FORCE_IPV4:-0}" \
         -e NEON_DIST=jammy \
         -e STABLE_COPY=1 \
         -e UPDATE_INFO='gh-releases-zsync|thereisnotime|konsole-appimage|latest|Konsole-jammy-x86_64.AppImage.zsync' \
@@ -62,6 +64,7 @@ build-release:
     docker run --rm -v "$PWD:/work" -w /work \
         -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
         -e NEON_CHANNEL='{{NEON}}' \
+        -e APT_FORCE_IPV4="${APT_FORCE_IPV4:-0}" \
         -e STABLE_COPY=1 \
         -e UPDATE_INFO='gh-releases-zsync|thereisnotime|konsole-appimage|latest|Konsole-x86_64.AppImage.zsync' \
         {{IMAGE}} bash /work/build/build-appimage.sh

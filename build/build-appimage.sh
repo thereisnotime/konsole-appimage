@@ -22,6 +22,20 @@ export DEBIAN_FRONTEND=noninteractive
 
 log() { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 
+# A stalled apt is the most common way this build wedges: without a timeout it
+# blocks forever rather than failing. Seen in practice against neon's archive
+# over a broken IPv6 path, where apt-get update never returned at all.
+# APT_FORCE_IPV4=1 works around that; it is opt-in because forcing IPv4 would
+# break an IPv6-only host.
+install -d /etc/apt/apt.conf.d
+{
+    echo 'Acquire::http::Timeout "30";'
+    echo 'Acquire::https::Timeout "30";'
+    echo 'Acquire::Retries "3";'
+    [ "${APT_FORCE_IPV4:-0}" = "1" ] && echo 'Acquire::ForceIPv4 "true";'
+} > /etc/apt/apt.conf.d/99-build-appimage
+[ "${APT_FORCE_IPV4:-0}" = "1" ] && log "Forcing IPv4 for apt"
+
 log "Base packages"
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends \
